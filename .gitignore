@@ -1,0 +1,29 @@
+# 数据缓存 / 生成数据（可通过生成器重建）
+data/standard_parts/
+data/fastener_defects/
+data/thread_side/
+data/dimension_test/
+data/neu_yolo/
+data/neu_det/
+data/NEU-DET-Steel-Surface-Defect-Detection-master/
+data/neu_master.zip
+data/runs/
+data/raw/
+data/db/
+data/debug_*.png
+
+# 模型权重（体积大，可重新训练）
+models/*.pt
+models/*.pth
+yolo26n.pt
+yolov8n.pt
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# 临时文件
+reports/
+runs/
+.DS_Store
