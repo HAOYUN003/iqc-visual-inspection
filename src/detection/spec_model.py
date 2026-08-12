@@ -52,6 +52,8 @@ class SpecCNN(nn.Module):
 # ================= 数据集 =================
 
 class SpecDataset(Dataset):
+    _IMG_EXTS = ("*.png", "*.jpg", "*.jpeg", "*.bmp")
+
     def __init__(self, root: Path, split: str, size=(224, 224)):
         self.samples = []
         self.labels = []
@@ -60,7 +62,7 @@ class SpecDataset(Dataset):
             cls_dir = root / cls
             if not cls_dir.exists():
                 continue
-            for img_path in sorted(cls_dir.glob("*.png")):
+            for img_path in sorted(_iter_images(cls_dir)):
                 self.samples.append(str(img_path))
                 self.labels.append(label)
         self.transform = transforms.Compose([
@@ -75,6 +77,12 @@ class SpecDataset(Dataset):
     def __getitem__(self, i):
         img = Image.open(self.samples[i]).convert("RGB")
         return self.transform(img), self.labels[i]
+
+
+def _iter_images(directory: Path):
+    """按扩展名收集图像文件（png/jpg/jpeg/bmp），支持真实照片放 jpg"""
+    import itertools
+    return itertools.chain(*(sorted(directory.glob(pat)) for pat in SpecDataset._IMG_EXTS))
 
 
 # ================= 训练 =================

@@ -60,12 +60,15 @@ def trace_query(batch_id=None, material_no=None, supplier=None, verdict=None,
                 date_from=None, date_to=None, limit=500):
     """追溯查询：返回检验记录明细 DataFrame"""
     filters = {k: v for k, v in {
-        "batch_id": batch_id, "ai_verdict": verdict,
+        "batch_id": batch_id, "material_no": material_no, "supplier": supplier,
+        "ai_verdict": verdict,
         "date_from": date_from, "date_to": date_to,
     }.items() if v}
     records = db.get_records(filters, limit=limit)
     rows = []
     for r in records:
+        r = db.parse_defect_result(r)
+        dim = r.get("dimension")
         rows.append({
             "记录ID": r["record_id"],
             "批次号": r["batch_id"],
@@ -75,6 +78,8 @@ def trace_query(batch_id=None, material_no=None, supplier=None, verdict=None,
             "检验员": r["inspector"],
             "检验时间": r["inspected_at"],
             "AI规格": r["spec_result"],
+            "尺寸判定": (f"{dim['outer_diam_mm']:.2f}mm {dim['status']}"
+                        if dim and dim.get("outer_diam_mm") is not None else ""),
             "缺陷": _fmt_defect(r["defect_result"]),
             "AI判定": r["ai_verdict"],
             "人工复核": r["review_verdict"],

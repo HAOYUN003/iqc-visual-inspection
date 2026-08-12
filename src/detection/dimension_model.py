@@ -65,6 +65,20 @@ def _detect_part_type(mask, outer_contour, holes):
     return "unknown"
 
 
+def infer_spec(part_type, outer_diam_mm):
+    """由零件类型 + 实测外径反推规格（M3~M8）。
+    名义外径：screw/nut = 头径，washer = 头径×1.25。
+    返回 (规格, 与名义值偏差mm)；偏差过大返回 (None, 偏差)。
+    """
+    if part_type not in ("screw", "nut", "washer"):
+        return None, None
+    factor = 1.25 if part_type == "washer" else 1.0
+    cand = {spec: d * factor for spec, d in SPEC_NOMINAL_HEAD_MM.items()}
+    best = min(cand, key=lambda s: abs(cand[s] - outer_diam_mm))
+    dist = abs(cand[best] - outer_diam_mm)
+    return best, dist
+
+
 # ================= 亚像素边缘 =================
 
 def _subpixel_edge_along_ray(gray, cx, cy, theta, search_r):

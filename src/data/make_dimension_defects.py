@@ -42,17 +42,17 @@ def nominal_outer_mm(spec, kind):
 
 def draw_with_outer_diam(spec, kind, outer_mm, px_per_mm=PX_PER_MM, size=SIZE):
     """按指定外径 mm 绘制三种零件（统一测量真值 = 最外层轮廓直径）。
-    msp 绘制函数的 scale 使"半径px = HEAD_DIAM×scale"，故外径px = 2×HEAD_DIAM×scale。
-    要外径px = outer_mm×px_per_mm：scale = outer_mm×px_per_mm/(2×HEAD_DIAM)。
-    washer 内部再乘 1.25，故除以 1.25 抵消。
+    生成器语义统一为：scale = px_per_mm，直径 px = 名义外径(mm) × px_per_mm。
+    直接指定外径：对 screw/nut 传 spec 的名义头径即得标称，垫片外径 = 头径×1.25。
+    若要绘制"非标称"外径（超差件），需换算 scale = outer_mm×px_per_mm / 名义外径(mm)。
     """
     if kind == "screw":
-        scale = outer_mm * px_per_mm / (2 * msp.HEAD_DIAM_MM[spec])
+        scale = outer_mm * px_per_mm / msp.HEAD_DIAM_MM[spec]
         return msp.draw_hex_screw_head(spec, scale, size=size)
     if kind == "washer":
-        scale = outer_mm * px_per_mm / (2 * msp.HEAD_DIAM_MM[spec] * 1.25)
+        scale = outer_mm * px_per_mm / (msp.HEAD_DIAM_MM[spec] * 1.25)
         return msp.draw_washer(spec, scale, size=size)
-    scale = outer_mm * px_per_mm / (2 * msp.HEAD_DIAM_MM[spec])
+    scale = outer_mm * px_per_mm / msp.HEAD_DIAM_MM[spec]
     return msp.draw_nut(spec, scale, size=size)
 
 

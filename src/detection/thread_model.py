@@ -29,6 +29,8 @@ from detection import spec_model
 
 
 class ThreadDataset(Dataset):
+    _IMG_EXTS = ("*.png", "*.jpg", "*.jpeg", "*.bmp")
+
     def __init__(self, root: Path, split: str, size=THREAD_IMG_SIZE):
         self.samples = []
         self.labels = []
@@ -37,7 +39,7 @@ class ThreadDataset(Dataset):
             cls_dir = root / cls
             if not cls_dir.exists():
                 continue
-            for img_path in sorted(cls_dir.glob("*.png")):
+            for img_path in sorted(_iter_images(cls_dir)):
                 self.samples.append(str(img_path))
                 self.labels.append(label)
         self.transform = transforms.Compose([
@@ -52,6 +54,12 @@ class ThreadDataset(Dataset):
     def __getitem__(self, i):
         img = Image.open(self.samples[i]).convert("RGB")
         return self.transform(img), self.labels[i]
+
+
+def _iter_images(directory: Path):
+    """按扩展名收集图像文件（png/jpg/jpeg/bmp），支持真实照片放 jpg"""
+    import itertools
+    return itertools.chain(*(sorted(directory.glob(pat)) for pat in ThreadDataset._IMG_EXTS))
 
 
 def build_model(n_classes=len(THREAD_CLASSES)):

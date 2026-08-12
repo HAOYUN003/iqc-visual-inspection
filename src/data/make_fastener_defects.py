@@ -146,10 +146,11 @@ def _defect_color(img, p, rng):
 
 def make_one(rng):
     """生成一张带 0~2 缺陷的标准件图，返回 (img, yolo_lines)"""
-    # 复用 msp 生成一张干净标准件（固定 scale，避免抖动干扰缺陷检测）
+    from config import CALIB_PX_PER_MM
+    # 复用 msp 生成一张干净标准件（scale 与全局标定一致，避免抖动干扰缺陷检测）
     spec = rng.choice(list(msp.HEAD_DIAM_MM.keys()))
     kind = rng.choice(["screw", "washer", "nut"])
-    scale = rng.uniform(8.4, 8.6)
+    scale = CALIB_PX_PER_MM * rng.uniform(0.98, 1.02)
     if kind == "screw":
         img = msp.draw_hex_screw_head(spec, scale, size=SIZE)
     elif kind == "washer":

@@ -94,7 +94,9 @@ def inspector_page():
                     st.warning("请先登记批次")
                 else:
                     with st.spinner("AI 检测中..."):
-                        res = pipeline.run_detection(img_bgr, inspector=inspector)
+                        res = pipeline.run_detection(
+                            img_bgr, inspector=inspector,
+                            expected_spec=st.session_state.batch_info.get("spec_expected") or None)
                         st.session_state.last_result = res
                         st.session_state.last_batch = st.session_state.batch_info["batch_id"]
 
@@ -109,10 +111,24 @@ def inspector_page():
         spec = res["spec_result"]
         conf = res["spec_confidence"]
         m1, m2, m3 = st.columns(3)
-        m1.metric("AI 规格识别", spec or "未启用", f"置信度 {conf:.2f}" if conf else "")
+        method = "尺寸反推" if res.get("spec_method") == "dimension" else "CNN" if res.get("spec_method") == "cnn" else ""
+        m1.metric("AI 规格识别", spec or "未识别",
+                  f"{method} · 置信度 {conf:.2f}" if conf else method or "")
         m2.metric("缺陷检出", _fmt_defect(res["defect_summary"]) or "无")
         vc = "✅ 通过" if res["ai_verdict"] == "OK" else "🚨 异常"
         m3.metric("AI 初判", vc)
+
+        dim = res.get("dimension")
+        if dim:
+            if dim.get("outer_diam_mm") is not None:
+                st.markdown(f"**尺寸测量**：{dim.get('part_type', '?')} "
+                            f"外径 {dim['outer_diam_mm']:.2f}mm"
+                            + (f"，内径 {dim['inner_diam_mm']:.2f}mm" if dim.get("inner_diam_mm") else ""))
+            if dim.get("reason"):
+                if dim.get("status") == "NG":
+                    st.error(dim["reason"])
+                else:
+                    st.caption(dim["reason"])
 
         if res["reasons"]:
             st.warning("；".join(res["reasons"]))
@@ -202,11 +218,18 @@ def supervisor_page():
         verdict = st.selectbox("AI判定", ["", "OK", "NG", "UNSURE"])
         date_from = st.date_input("开始日期", value=None)
         date_to = st.date_input("结束日期", value=None)
+        # 单一关键词同时匹配批次号/料号/供应商，客户端侧过滤
         if st.button("查询", type="primary"):
             tdf = rp.trace_query(
                 batch_id=q or None, verdict=verdict or None,
                 date_from=str(date_from) if date_from else None,
                 date_to=str(date_to) if date_to else None)
+            if q and not tdf.empty:
+                tdf = tdf[
+                    tdf["批次号"].astype(str).str.contains(q, case=False, na=False)
+                    | tdf["料号"].astype(str).str.contains(q, case=False, na=False)
+                    | tdf["供应商"].astype(str).str.contains(q, case=False, na=False)
+                ].reset_index(drop=True)
             if tdf.empty:
                 st.info("未找到匹配记录")
             else:

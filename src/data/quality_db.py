@@ -14,10 +14,12 @@
 """
 import sqlite3
 import json
+import sys
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from config import DB_PATH
 
 
@@ -62,6 +64,8 @@ def init_db():
             spec_confidence REAL,                    -- 规格置信度
             defect_result TEXT,                      -- 缺陷检测汇总（JSON: {class:count}）
             defect_boxes TEXT,                       -- 缺陷框（JSON 数组）
+            dimension_json TEXT,                     -- 尺寸测量结果（JSON，含判定）
+            thread_result TEXT,                      -- 螺纹状态检测结果
             ai_verdict   TEXT,                       -- AI 初判 OK/NG/UNSURE
             review_verdict TEXT,                     -- 人工复核 PASS/REJECT/空
             review_note   TEXT,                      -- 复核备注
@@ -79,6 +83,16 @@ def init_db():
             note        TEXT
         );
         """)
+        _migrate_schema(conn)
+
+
+def _migrate_schema(conn):
+    """老库缺少新列时 ALTER TABLE 补齐，避免重复建表忽略新字段"""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(inspection_records)")}
+    if "dimension_json" not in cols:
+        conn.execute("ALTER TABLE inspection_records ADD COLUMN dimension_json TEXT")
+    if "thread_result" not in cols:
+        conn.execute("ALTER TABLE inspection_records ADD COLUMN thread_result TEXT")
 
 
 # ================= 批次操作 =================
@@ -127,18 +141,20 @@ def get_batches(filters=None, limit=200):
 
 def add_record(batch_id, image_path=None, spec_result=None, spec_confidence=None,
                defect_result=None, defect_boxes=None, ai_verdict=None,
-               inspector=None, part_index=0):
-    """写入一条检验记录。defect_result/defect_boxes 传 dict/list，内部序列化为 JSON。"""
+               inspector=None, part_index=0, dimension=None, thread_result=None):
+    """写入一条检验记录。defect_result/defect_boxes/dimension 传 dict/list，内部序列化为 JSON。"""
     with get_conn() as conn:
         cur = conn.execute(
             "INSERT INTO inspection_records "
             "(batch_id, part_index, inspector, image_path, spec_result, spec_confidence, "
-            " defect_result, defect_boxes, ai_verdict) "
-            "VALUES (?,?,?,?,?,?,?,?,?)",
+            " defect_result, defect_boxes, dimension_json, thread_result, ai_verdict) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (batch_id, part_index, inspector, image_path, spec_result,
              spec_confidence,
              json.dumps(defect_result, ensure_ascii=False) if defect_result else None,
              json.dumps(defect_boxes, ensure_ascii=False) if defect_boxes else None,
+             json.dumps(dimension, ensure_ascii=False) if dimension else None,
+             thread_result,
              ai_verdict))
         return cur.lastrowid
 
@@ -153,14 +169,18 @@ def review_record(record_id, verdict, note="", reviewer=""):
 
 
 def get_records(filters=None, limit=500):
-    """查询检验记录，filters 支持 batch_id/verdict/date 范围"""
+    """查询检验记录，filters 支持 batch_id/material_no/supplier/verdict/date 范围"""
     sql = ("SELECT r.*, b.material_no, b.material_name, b.spec, b.supplier "
            "FROM inspection_records r "
            "LEFT JOIN incoming_batches b ON r.batch_id=b.batch_id WHERE 1=1")
     args = []
     if filters:
         if filters.get("batch_id"):
-            sql += " AND r.batch_id = ?"; args.append(filters["batch_id"])
+            sql += " AND r.batch_id LIKE ?"; args.append(f"%{filters['batch_id']}%")
+        if filters.get("material_no"):
+            sql += " AND b.material_no LIKE ?"; args.append(f"%{filters['material_no']}%")
+        if filters.get("supplier"):
+            sql += " AND b.supplier LIKE ?"; args.append(f"%{filters['supplier']}%")
         if filters.get("ai_verdict"):
             sql += " AND r.ai_verdict = ?"; args.append(filters["ai_verdict"])
         if filters.get("review_verdict"):
@@ -193,6 +213,11 @@ def parse_defect_result(record):
         r["defect_result"] = json.loads(r["defect_result"])
     if r.get("defect_boxes"):
         r["defect_boxes"] = json.loads(r["defect_boxes"])
+    if r.get("dimension_json"):
+        try:
+            r["dimension"] = json.loads(r["dimension_json"])
+        except Exception:
+            pass
     return r
 
 

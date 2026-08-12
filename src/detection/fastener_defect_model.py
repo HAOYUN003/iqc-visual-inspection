@@ -65,9 +65,13 @@ def _has_gpu():
 # ================= 推理 =================
 
 def load_fastener_defect_model(device="cpu"):
+    """加载紧固件缺陷 YOLO 模型。权重缺失时抛错，避免静默降级到 COCO 通用模型。
+    通用 COCO 模型对紧固件表面缺陷无意义，误报会误导检验判定。"""
     from ultralytics import YOLO
-    path = FASTENER_DEFECT_MODEL_PATH if FASTENER_DEFECT_MODEL_PATH.exists() else "yolov8n.pt"
-    return YOLO(path, verbose=False)
+    if not FASTENER_DEFECT_MODEL_PATH.exists():
+        raise FileNotFoundError(
+            f"紧固件缺陷模型不存在: {FASTENER_DEFECT_MODEL_PATH}，请先运行训练")
+    return YOLO(FASTENER_DEFECT_MODEL_PATH, verbose=False)
 
 
 def predict_fastener_defects(model, img_bgr, conf_thresh=FASTENER_DEFECT_CONF_THRESH):

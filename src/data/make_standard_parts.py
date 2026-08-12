@@ -14,10 +14,13 @@
 import math
 import random
 import shutil
+import sys
 from pathlib import Path
 
 import cv2
 import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 # 参考真实尺寸（头部直径 mm），用于成比例缩放
 HEAD_DIAM_MM = {"M3": 5.5, "M4": 7.0, "M5": 8.5, "M6": 10.0, "M8": 13.0}
@@ -30,11 +33,12 @@ N_VAL = 50          # 每类验证图
 # ================= 基础绘制 =================
 
 def draw_hex_screw_head(spec, scale, size=IMAGE_SIZE):
-    """内六角螺钉头部俯视图：圆形法兰 + 内六角沉孔"""
+    """内六角螺钉头部俯视图：圆形法兰 + 内六角沉孔
+    scale = px_per_mm（每毫米像素数），头部直径 px = HEAD_DIAM_MM × scale"""
     img = np.zeros((size, size, 3), dtype=np.uint8)
     c = size // 2
-    # 头部外圆半径(px) = 该规格头部直径(mm) × 每毫米像素数
-    r_outer = int(HEAD_DIAM_MM[spec] * scale)
+    # 头部半径 px = 头部直径(mm)/2 × 每毫米像素数
+    r_outer = int(HEAD_DIAM_MM[spec] * scale / 2)
     cv2.circle(img, (c, c), r_outer, (160, 160, 160), -1)
     # 内六角沉孔（六边形）
     r_hex = int(r_outer * 0.45)
@@ -45,11 +49,12 @@ def draw_hex_screw_head(spec, scale, size=IMAGE_SIZE):
 
 
 def draw_washer(spec, scale, is_flat=True, size=IMAGE_SIZE):
-    """垫片俯视图：圆环"""
+    """垫片俯视图：圆环
+    scale = px_per_mm，垫片外径 px = HEAD_DIAM_MM×1.25 × scale"""
     img = np.zeros((size, size, 3), dtype=np.uint8)
     c = size // 2
-    # 垫片外圆半径(px) = 头部直径(mm) × 1.25 放大 × 每毫米像素数
-    base_r = int(HEAD_DIAM_MM[spec] * scale * 1.25)
+    # 垫片外径 = 头部直径(mm) × 1.25，半径取一半
+    base_r = int(HEAD_DIAM_MM[spec] * scale * 1.25 / 2)
     hole_r = int(base_r * 0.42)
     cv2.circle(img, (c, c), base_r, (200, 200, 205), -1)
     cv2.circle(img, (c, c), hole_r, (0, 0, 0), -1)
@@ -60,11 +65,12 @@ def draw_washer(spec, scale, is_flat=True, size=IMAGE_SIZE):
 
 
 def draw_nut(spec, scale, size=IMAGE_SIZE):
-    """螺母俯视图：外六角 + 中心螺纹孔"""
+    """螺母俯视图：外六角 + 中心螺纹孔
+    scale = px_per_mm，六角外接圆直径 px = HEAD_DIAM_MM × scale"""
     img = np.zeros((size, size, 3), dtype=np.uint8)
     c = size // 2
-    # 螺母外接圆半径(px) = 头部直径(mm) × 每毫米像素数
-    hex_r = int(HEAD_DIAM_MM[spec] * scale)
+    # 螺母外接圆半径 px = 直径(mm)/2 × 每毫米像素数
+    hex_r = int(HEAD_DIAM_MM[spec] * scale / 2)
     _draw_hexagon(img, c, c, hex_r, angle=30, color=(170, 170, 175), thickness=-1)
     hole_r = int(hex_r * 0.42)
     cv2.circle(img, (c, c), hole_r, (30, 30, 35), -1)
@@ -117,14 +123,18 @@ def generate(root: Path, n_train=N_TRAIN, n_val=N_VAL, size=IMAGE_SIZE, px_per_m
         (root / split).mkdir(parents=True, exist_ok=True)
         (root / split).parent.mkdir(parents=True, exist_ok=True)
 
+    if px_per_mm is None:
+        # 默认与全局标定一致，加微幅抖动（模拟轻微对焦/距离差异）
+        from config import CALIB_PX_PER_MM
+        px_per_mm = CALIB_PX_PER_MM
+    jitter = px_per_mm * 0.02   # ±2% 抖动
+
     for spec in HEAD_DIAM_MM:
         for split, n in (("train", n_train), ("val", n_val)):
             split_dir = root / split / spec
             split_dir.mkdir(parents=True, exist_ok=True)
             for i in range(n):
-                # 每毫米像素数：默认微幅抖动（模拟轻微对焦/距离差异），
-                # 可传固定值 px_per_mm（尺寸验证集用），拉开规格尺寸差且 M8 垫片不溢出
-                scale = px_per_mm if px_per_mm else random.uniform(8.4, 8.6)
+                scale = random.uniform(px_per_mm - jitter, px_per_mm + jitter)
                 kind = random.choice(["screw", "washer", "nut"])
                 if kind == "screw":
                     img = draw_hex_screw_head(spec, scale)

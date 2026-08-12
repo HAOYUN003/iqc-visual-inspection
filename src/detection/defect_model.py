@@ -163,8 +163,11 @@ def _has_gpu():
 
 def load_defect_model(device="cpu"):
     from ultralytics import YOLO
-    path = DEFECT_MODEL_PATH if DEFECT_MODEL_PATH.exists() else "yolov8n.pt"
-    return YOLO(path, verbose=False)
+    if not DEFECT_MODEL_PATH.exists():
+        raise FileNotFoundError(
+            f"缺陷模型不存在: {DEFECT_MODEL_PATH}，请先运行训练"
+            "(python defect_model.py --train)")
+    return YOLO(DEFECT_MODEL_PATH, verbose=False)
 
 
 def predict_defects(model, img_bgr, conf_thresh=DEFECT_CONF_THRESH):
