@@ -18,7 +18,8 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.data import quality_db as db
 from src import report as rp
-from src.detection import pipeline
+from src import inspection_checklist as cl
+from src.detection import vision_detector
 from src.config import SPEC_CLASSES
 
 st.set_page_config(page_title="IQC 智能来料检测系统", page_icon="🔍", layout="wide")
@@ -36,9 +37,8 @@ def init():
 
 def load_models_ui():
     if "models_loaded" not in st.session_state:
-        with st.spinner("正在加载 AI 模型（首次约需数十秒）..."):
-            pipeline.load_models()
-            st.session_state.models_loaded = True
+        st.session_state.models_loaded = True
+        st.caption("视觉检测就绪（Qwen-VL 在线）")
 
 
 # ================= 检验员端 =================
@@ -72,33 +72,69 @@ def inspector_page():
             }
             st.success(f"批次 {batch_id} 已登记")
 
-        # ---- 图像采集 ----
+        # ---- 检测模式 ----
         st.subheader("② 图像采集")
+        detect_mode = st.radio("检测模式", ["标准件（卡尺读数定规格）", "加工件（多角度表面缺陷）"],
+                               horizontal=True, key="detect_mode")
+
+        # 加工件：可选关联图纸清单（按图纸技术要求逐项校验）
+        drawing_no = None
+        if detect_mode.startswith("加工件"):
+            cl_lists = cl.list_checklists()
+            if cl_lists:
+                opts = {f"{c['drawing_no']} · {c['part_name'] or ''}": c["drawing_no"]
+                        for c in cl_lists}
+                sel = st.selectbox("关联图纸（可选，按图纸清单逐项校验）",
+                                   ["不关联图纸", *opts.keys()])
+                drawing_no = opts.get(sel) if sel != "不关联图纸" else None
+
         src_mode = st.radio("图像来源", ["上传图片", "本地摄像头"], horizontal=True)
         uploaded = None
         if src_mode == "上传图片":
-            uploaded = st.file_uploader("选择零件照片", type=["jpg", "png", "jpeg", "bmp"])
+            if detect_mode.startswith("加工件"):
+                uploaded = st.file_uploader("选择零件照片（可多选：正面/侧面/孔位）",
+                                            type=["jpg", "png", "jpeg", "bmp"],
+                                            accept_multiple_files=True)
+            else:
+                uploaded = st.file_uploader("选择零件照片", type=["jpg", "png", "jpeg", "bmp"])
         else:
             cam = st.camera_input("对准零件拍照", key="cam1")
 
-        img_bgr = None
-        if uploaded is not None:
-            img_bgr = cv2.imdecode(np_from(uploaded.read()), cv2.IMREAD_COLOR)
-        elif "cam1" in st.session_state and st.session_state.cam1 is not None:
-            img_bgr = cv2.imdecode(np_from(st.session_state.cam1.getvalue()), cv2.IMREAD_COLOR)
+        # 收集待检图（内存 BGR）
+        if src_mode == "上传图片" and uploaded:
+            if isinstance(uploaded, list):
+                imgs_bgr = [cv2.imdecode(np_from(u.read()), cv2.IMREAD_COLOR) for u in uploaded]
+                imgs_bgr = [i for i in imgs_bgr if i is not None]
+            else:
+                imgs_bgr = [cv2.imdecode(np_from(uploaded.read()), cv2.IMREAD_COLOR)]
+        elif src_mode == "本地摄像头" and "cam1" in st.session_state and st.session_state.cam1 is not None:
+            imgs_bgr = [cv2.imdecode(np_from(st.session_state.cam1.getvalue()), cv2.IMREAD_COLOR)]
+        else:
+            imgs_bgr = []
 
-        if img_bgr is not None:
-            st.image(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB), caption="待检图像", width=320)
+        if imgs_bgr:
+            for k, im in enumerate(imgs_bgr):
+                st.image(cv2.cvtColor(im, cv2.COLOR_BGR2RGB),
+                         caption=f"待检图像 {k+1}" if len(imgs_bgr) > 1 else "待检图像", width=320)
             if st.button("🔍 开始检测", type="primary", use_container_width=True):
                 if not st.session_state.get("batch_info"):
                     st.warning("请先登记批次")
                 else:
-                    with st.spinner("AI 检测中..."):
-                        res = pipeline.run_detection(
-                            img_bgr, inspector=inspector,
-                            expected_spec=st.session_state.batch_info.get("spec_expected") or None)
+                    with st.spinner("AI 检测中（视觉分析）..."):
+                        if detect_mode.startswith("加工件"):
+                            if drawing_no:
+                                res = vision_detector.run_checklist_detection(
+                                    [(im, None) for im in imgs_bgr], drawing_no=drawing_no)
+                            else:
+                                res = vision_detector.run_machined_detection(
+                                    [(im, None) for im in imgs_bgr])
+                        else:
+                            res = vision_detector.run_vision_detection(
+                                imgs_bgr[0],
+                                expected_spec=st.session_state.batch_info.get("spec_expected") or None)
                         st.session_state.last_result = res
                         st.session_state.last_batch = st.session_state.batch_info["batch_id"]
+                        st.session_state.last_mode = detect_mode
 
     with c2:
         # ---- 检测结果 ----
@@ -108,19 +144,58 @@ def inspector_page():
             st.info("完成图像采集并点击「开始检测」后，结果将显示在这里。")
             return
 
+        is_machined = res.get("spec_method") == "vision_machined"
+        is_checklist = res.get("spec_method") == "vision_checklist"
         spec = res["spec_result"]
         conf = res["spec_confidence"]
         m1, m2, m3 = st.columns(3)
-        method = "尺寸反推" if res.get("spec_method") == "dimension" else "CNN" if res.get("spec_method") == "cnn" else ""
-        m1.metric("AI 规格识别", spec or "未识别",
-                  f"{method} · 置信度 {conf:.2f}" if conf else method or "")
+        if is_checklist:
+            method = f"图纸清单校验 · {res.get('checklist_no', '')}"
+            m1.metric("校验对象", res.get("checklist_name") or "加工件", method or "")
+        elif is_machined:
+            method = "多角度视觉检测"
+            m1.metric("检测对象", "加工件", method or "")
+        else:
+            method = "卡尺读数" if res.get("spec_method") == "vision_reading" else "尺寸反推" if res.get("spec_method") == "dimension" else "CNN" if res.get("spec_method") == "cnn" else ""
+            m1.metric("AI 规格识别", spec or "未识别",
+                      f"{method} · 置信度 {conf:.2f}" if conf else method or "")
         m2.metric("缺陷检出", _fmt_defect(res["defect_summary"]) or "无")
         vc = "✅ 通过" if res["ai_verdict"] == "OK" else "🚨 异常"
         m3.metric("AI 初判", vc)
 
+        # 加工件：逐张角度展示
+        if is_machined and res.get("per_image"):
+            st.markdown("**各角度检测明细**")
+            for p in res["per_image"]:
+                tag = p.get("image") or "内存图"
+                if p.get("defects"):
+                    st.markdown(f"- {tag}: {_fmt_defect(p['defects']) or '无'}")
+                elif p.get("warn"):
+                    st.markdown(f"- {tag}: ⚠️ {p['warn']}")
+                else:
+                    st.markdown(f"- {tag}: 通过")
+
+        # 图纸清单：逐项校验明细
+        if is_checklist and res.get("per_item"):
+            st.markdown(f"**图纸清单逐项校验**（{res.get('checklist_no', '')}）")
+            rows = []
+            for it in res["per_item"]:
+                if it["status"] == "OK":
+                    st.markdown(f"- ✅ **{it['label']}**：{it['reason'] or '合格'}")
+                elif it["status"] == "NG":
+                    st.markdown(f"- 🚨 **{it['label']}**：{it['reason']}")
+                else:
+                    tag = "（照片不可验证，需仪器检测）" if not it.get("visual") else ""
+                    st.markdown(f"- ⚠️ **{it['label']}**：{it['reason'] or '未判定'}{tag}")
+
         dim = res.get("dimension")
         if dim:
-            if dim.get("outer_diam_mm") is not None:
+            if dim.get("reading_mm") is not None:
+                st.markdown(f"**卡尺读数**：{dim['reading_mm']:.2f}mm "
+                            f"（名义 {dim.get('nominal_mm')}mm ±{dim.get('tolerance_mm')}mm"
+                            + (f"，偏差 {dim['dist_mm']:.2f}mm" if dim.get("dist_mm") is not None else "")
+                            + f"，方法：{dim.get('method', '')}）")
+            elif dim.get("outer_diam_mm") is not None:
                 st.markdown(f"**尺寸测量**：{dim.get('part_type', '?')} "
                             f"外径 {dim['outer_diam_mm']:.2f}mm"
                             + (f"，内径 {dim['inner_diam_mm']:.2f}mm" if dim.get("inner_diam_mm") else ""))
@@ -140,9 +215,10 @@ def inspector_page():
         st.markdown("---")
         if st.button("📥 记录入库", type="primary"):
             bi = st.session_state.batch_info
-            rec_id, verdict = pipeline.save_record(
-                bi["batch_id"], res, inspector=bi["inspector"],
-                expected_spec=bi["spec_expected"] or None)
+            # 加工件/清单模式不做规格防错比对（spec_result 为 None）
+            exp = None if (is_machined or is_checklist) else (bi["spec_expected"] or None)
+            rec_id, verdict = vision_detector.save_record(
+                bi["batch_id"], res, inspector=bi["inspector"], expected_spec=exp)
             st.success(f"已入库：记录#{rec_id}，AI判定 {verdict}")
 
         with st.form("review_form"):

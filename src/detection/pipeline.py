@@ -131,10 +131,12 @@ def run_detection(img_bgr, material_no=None, inspector="", save_image=True,
     return result
 
 
-def save_record(batch_id, result, inspector="", part_index=0, expected_spec=None):
+def save_record(batch_id, result, inspector="", part_index=0, expected_spec=None,
+                checklist=None):
     """
     把检测结果写入质检数据库。
     expected_spec: 料单/图纸期望规格，用于"规格防错"比对（不一致 → NG）
+    checklist: 图纸清单逐项校验结果（JSON 数组），随记录入库
     返回 (record_id, ai_verdict)
     """
     verdict = result["ai_verdict"]
@@ -155,6 +157,7 @@ def save_record(batch_id, result, inspector="", part_index=0, expected_spec=None
         ai_verdict=verdict,
         inspector=inspector,
         part_index=part_index,
+        checklist=checklist,
     )
     return record_id, verdict
 

@@ -65,6 +65,7 @@ def init_db():
             defect_result TEXT,                      -- 缺陷检测汇总（JSON: {class:count}）
             defect_boxes TEXT,                       -- 缺陷框（JSON 数组）
             dimension_json TEXT,                     -- 尺寸测量结果（JSON，含判定）
+            checklist_json TEXT,                     -- 图纸清单逐项校验结果（JSON 数组）
             thread_result TEXT,                      -- 螺纹状态检测结果
             ai_verdict   TEXT,                       -- AI 初判 OK/NG/UNSURE
             review_verdict TEXT,                     -- 人工复核 PASS/REJECT/空
@@ -93,6 +94,8 @@ def _migrate_schema(conn):
         conn.execute("ALTER TABLE inspection_records ADD COLUMN dimension_json TEXT")
     if "thread_result" not in cols:
         conn.execute("ALTER TABLE inspection_records ADD COLUMN thread_result TEXT")
+    if "checklist_json" not in cols:
+        conn.execute("ALTER TABLE inspection_records ADD COLUMN checklist_json TEXT")
 
 
 # ================= 批次操作 =================
@@ -141,19 +144,21 @@ def get_batches(filters=None, limit=200):
 
 def add_record(batch_id, image_path=None, spec_result=None, spec_confidence=None,
                defect_result=None, defect_boxes=None, ai_verdict=None,
-               inspector=None, part_index=0, dimension=None, thread_result=None):
-    """写入一条检验记录。defect_result/defect_boxes/dimension 传 dict/list，内部序列化为 JSON。"""
+               inspector=None, part_index=0, dimension=None, thread_result=None,
+               checklist=None):
+    """写入一条检验记录。defect_result/defect_boxes/dimension/checklist 传 dict/list，内部序列化为 JSON。"""
     with get_conn() as conn:
         cur = conn.execute(
             "INSERT INTO inspection_records "
             "(batch_id, part_index, inspector, image_path, spec_result, spec_confidence, "
-            " defect_result, defect_boxes, dimension_json, thread_result, ai_verdict) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            " defect_result, defect_boxes, dimension_json, checklist_json, thread_result, ai_verdict) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (batch_id, part_index, inspector, image_path, spec_result,
              spec_confidence,
              json.dumps(defect_result, ensure_ascii=False) if defect_result else None,
              json.dumps(defect_boxes, ensure_ascii=False) if defect_boxes else None,
              json.dumps(dimension, ensure_ascii=False) if dimension else None,
+             json.dumps(checklist, ensure_ascii=False) if checklist else None,
              thread_result,
              ai_verdict))
         return cur.lastrowid
@@ -216,6 +221,11 @@ def parse_defect_result(record):
     if r.get("dimension_json"):
         try:
             r["dimension"] = json.loads(r["dimension_json"])
+        except Exception:
+            pass
+    if r.get("checklist_json"):
+        try:
+            r["checklist"] = json.loads(r["checklist_json"])
         except Exception:
             pass
     return r

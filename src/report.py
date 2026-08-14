@@ -69,6 +69,12 @@ def trace_query(batch_id=None, material_no=None, supplier=None, verdict=None,
     for r in records:
         r = db.parse_defect_result(r)
         dim = r.get("dimension")
+        if dim and dim.get("reading_mm") is not None:
+            dim_str = f"读数 {dim['reading_mm']:.2f}mm {dim.get('status', '')}"
+        elif dim and dim.get("outer_diam_mm") is not None:
+            dim_str = f"{dim['outer_diam_mm']:.2f}mm {dim.get('status', '')}"
+        else:
+            dim_str = ""
         rows.append({
             "记录ID": r["record_id"],
             "批次号": r["batch_id"],
@@ -78,9 +84,9 @@ def trace_query(batch_id=None, material_no=None, supplier=None, verdict=None,
             "检验员": r["inspector"],
             "检验时间": r["inspected_at"],
             "AI规格": r["spec_result"],
-            "尺寸判定": (f"{dim['outer_diam_mm']:.2f}mm {dim['status']}"
-                        if dim and dim.get("outer_diam_mm") is not None else ""),
+            "尺寸判定": dim_str,
             "缺陷": _fmt_defect(r["defect_result"]),
+            "清单校验": _fmt_checklist(r.get("checklist")),
             "AI判定": r["ai_verdict"],
             "人工复核": r["review_verdict"],
             "备注": r["review_note"],
@@ -99,6 +105,18 @@ def _fmt_defect(defect_json):
     except Exception:
         pass
     return str(defect_json)
+
+
+def _fmt_checklist(checklist):
+    """清单逐项结果 → 摘要，如「表面状态OK/去毛刺NG/硬度需仪器」"""
+    if not checklist:
+        return ""
+    out = []
+    for it in checklist:
+        if isinstance(it, dict):
+            status = {"OK": "OK", "NG": "NG", "UNSURE": "需仪器"}.get(it.get("status"), "?")
+            out.append(f"{it.get('label')}{status}")
+    return "；".join(out)
 
 
 def export_report(df, filepath=None, fmt="csv"):
