@@ -83,6 +83,21 @@ def init_db():
             version     TEXT,                        -- 模型版本
             note        TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS materials (
+            material_no  TEXT PRIMARY KEY,           -- 料号
+            material_name TEXT,                      -- 名称
+            spec         TEXT,                       -- 规格（如 M4）
+            category     TEXT DEFAULT 'standard',    -- 类别 standard/parts
+            ai_enabled   INTEGER DEFAULT 1,          -- 是否启用 AI 检测（白名单开关）
+            check_spec   INTEGER DEFAULT 1,          -- 检测项：规格识别
+            check_dim    INTEGER DEFAULT 1,          -- 检测项：尺寸测量
+            check_defect INTEGER DEFAULT 1,          -- 检测项：表面缺陷
+            priority     TEXT,                       -- 重要性：high/medium/low
+            supplier     TEXT,                       -- 常用供应商
+            note         TEXT,                       -- 备注
+            created_at   TEXT DEFAULT (datetime('now','localtime'))
+        );
         """)
         _migrate_schema(conn)
 
@@ -96,6 +111,71 @@ def _migrate_schema(conn):
         conn.execute("ALTER TABLE inspection_records ADD COLUMN thread_result TEXT")
     if "checklist_json" not in cols:
         conn.execute("ALTER TABLE inspection_records ADD COLUMN checklist_json TEXT")
+
+
+# ================= 物料白名单操作 =================
+
+def upsert_material(material_no, material_name=None, spec=None, category="standard",
+                    ai_enabled=1, check_spec=1, check_dim=1, check_defect=1,
+                    priority=None, supplier=None, note=None, **kwargs):
+    """新增/更新一个物料的 AI 检测配置（白名单）。
+    **kwargs 容错：允许传入 get_materials 返回的完整 dict（含 created_at 等），忽略多余字段。"""
+    with get_conn() as conn:
+        conn.execute("""
+            INSERT INTO materials (material_no, material_name, spec, category,
+                ai_enabled, check_spec, check_dim, check_defect, priority, supplier, note)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(material_no) DO UPDATE SET
+                material_name=excluded.material_name,
+                spec=excluded.spec, category=excluded.category,
+                ai_enabled=excluded.ai_enabled, check_spec=excluded.check_spec,
+                check_dim=excluded.check_dim, check_defect=excluded.check_defect,
+                priority=excluded.priority, supplier=excluded.supplier, note=excluded.note
+        """, (material_no, material_name, spec, category, int(ai_enabled),
+              int(check_spec), int(check_dim), int(check_defect),
+              priority, supplier, note))
+
+
+def get_material(material_no):
+    """查询单个物料配置，不存在返回 None"""
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM materials WHERE material_no=?", (material_no,)).fetchone()
+        return dict(row) if row else None
+
+
+def get_materials(filters=None, limit=500):
+    """查询物料列表，可按启用状态/料号/名称过滤"""
+    sql = "SELECT * FROM materials WHERE 1=1"
+    args = []
+    if filters:
+        if filters.get("material_no"):
+            sql += " AND material_no LIKE ?"; args.append(f"%{filters['material_no']}%")
+        if filters.get("material_name"):
+            sql += " AND material_name LIKE ?"; args.append(f"%{filters['material_name']}%")
+        if filters.get("ai_enabled") is not None:
+            sql += " AND ai_enabled = ?"; args.append(int(filters["ai_enabled"]))
+        if filters.get("priority"):
+            sql += " AND priority = ?"; args.append(filters["priority"])
+    sql += " ORDER BY ai_enabled DESC, material_no LIMIT ?"
+    args.append(limit)
+    with get_conn() as conn:
+        rows = conn.execute(sql, args).fetchall()
+        return [dict(r) for r in rows]
+
+
+def delete_material(material_no):
+    with get_conn() as conn:
+        conn.execute("DELETE FROM materials WHERE material_no=?", (material_no,))
+
+
+def material_from_batch(batch_id):
+    """由批次号拿到关联的物料白名单配置（通过批次表反查料号）"""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT material_no FROM incoming_batches WHERE batch_id=?", (batch_id,)).fetchone()
+        if row is None:
+            return None
+        return get_material(row["material_no"])
 
 
 # ================= 批次操作 =================

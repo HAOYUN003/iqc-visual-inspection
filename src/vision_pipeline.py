@@ -17,7 +17,7 @@ sys.path.insert(0, str(os.path.dirname(os.path.abspath(__file__))))
 from config import SPEC_NOMINAL_HEAD_MM
 from ask_vision import ask
 
-READINGS_SAMPLES = 3
+READINGS_SAMPLES = 1  # 每种提示采样次数：1=通用1+个位1共2次（省钱，精度足够）；原3=6次
 PROMPT = (
     "数显卡尺显示屏上显示的测量值是多少mm？"
     "注意：这是一个小数字（例如 9.67），一位或两位整数加小数点后两位。"

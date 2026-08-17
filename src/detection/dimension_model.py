@@ -19,6 +19,8 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from config import (SPEC_NOMINAL_HEAD_MM, SPEC_HEAD_TOLERANCE_MM,
                     CALIB_PX_PER_MM)
+from config import patch_cv_io; patch_cv_io()
+
 
 
 # ================= 判型 =================

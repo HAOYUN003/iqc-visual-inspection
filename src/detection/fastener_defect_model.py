@@ -18,6 +18,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from config import (DATA_DIR, FASTENER_DEFECT_MODEL_PATH,
                     FASTENER_DEFECT_DATA, FASTENER_DEFECT_CONF_THRESH,
                     FASTENER_DEFECT_CLASSES, FASTENER_DEFECT_IMG_SIZE)
+from config import patch_cv_io; patch_cv_io()
+
 
 DATA_YAML = FASTENER_DEFECT_DATA / "data.yaml"
 

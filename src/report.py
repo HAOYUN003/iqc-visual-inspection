@@ -133,6 +133,80 @@ def export_report(df, filepath=None, fmt="csv"):
     return filepath
 
 
+# ================= 报表增强分析 =================
+
+def material_trend(material_no=None, limit=500):
+    """按物料的良率趋势（按时间），用于观察重点物料质量波动。"""
+    records = db.get_records({"material_no": material_no} if material_no else None,
+                             limit=limit)
+    rows = []
+    for r in records:
+        rows.append({
+            "检验时间": r["inspected_at"],
+            "料号": r["material_no"],
+            "AI判定": r["ai_verdict"],
+            "复核": r["review_verdict"],
+            "缺陷": _fmt_defect(r["defect_result"]),
+        })
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+    df = df.sort_values("检验时间").reset_index(drop=True)
+    # 良率 = OK 占比（按记录序号滚动）
+    df["累计OK数"] = (df["AI判定"] == "OK").cumsum()
+    df["累计件数"] = range(1, len(df) + 1)
+    df["良率"] = df["累计OK数"] / df["累计件数"]
+    return df
+
+
+def review_consistency(limit=500):
+    """复核一致性：AI 初判 vs 人工复核的冲突率。
+    冲突 = AI判定 OK 但复核 REJECT，或 AI判定 NG 但复核 PASS。"""
+    records = db.get_records(limit=limit)
+    rows = []
+    for r in records:
+        if not r.get("review_verdict"):
+            continue
+        ai = r.get("ai_verdict")
+        rv = r["review_verdict"]
+        conflict = (ai == "OK" and rv == "REJECT") or (ai == "NG" and rv == "PASS")
+        rows.append({
+            "记录ID": r["record_id"],
+            "料号": r["material_no"],
+            "AI判定": ai,
+            "人工复核": rv,
+            "冲突": "是" if conflict else "否",
+            "复核备注": r.get("review_note", ""),
+        })
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        df["冲突率"] = df["冲突"].apply(lambda x: 1 if x == "是" else 0)
+    return df
+
+
+def defect_breakdown(limit=500):
+    """缺陷类型分布明细（含每张图的缺陷计数），用于看主要缺陷。"""
+    records = db.get_records(limit=limit)
+    from collections import Counter
+    counter = Counter()
+    for r in records:
+        r = db.parse_defect_result(r)
+        d = r.get("defect_result")
+        if isinstance(d, dict):
+            counter.update(d)
+        # 清单校验里的 NG 表面项也算
+        cl = r.get("checklist")
+        if isinstance(cl, list):
+            for it in cl:
+                if isinstance(it, dict) and it.get("status") == "NG" and it.get("visual"):
+                    counter[it.get("label")] += 1
+    if not counter:
+        return pd.DataFrame()
+    df = pd.DataFrame({"缺陷类型": list(counter.keys()),
+                       "出现次数": list(counter.values())})
+    return df.sort_values("出现次数", ascending=False).reset_index(drop=True)
+
+
 if __name__ == "__main__":
     print("批次报表:")
     print(batch_report())

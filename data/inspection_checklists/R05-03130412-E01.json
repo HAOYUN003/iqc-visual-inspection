@@ -6,10 +6,23 @@
   "heat_treatment": "调质",
   "hardness": "HRC20~25",
   "dimensions_mm": {
-    "外形长": {"nominal": 220.5, "tolerance": 0.5},
-    "外形宽": {"nominal": 208.0, "tolerance": 0.5},
-    "厚度": {"nominal": 21.0, "tolerance": 0.5},
-    "孔径φ16H7": {"nominal": 16.0, "tolerance": 0.018, "note": "H7 上偏差+0.018"}
+    "外形长": {
+      "nominal": 220.5,
+      "tolerance": 0.5
+    },
+    "外形宽": {
+      "nominal": 208.0,
+      "tolerance": 0.5
+    },
+    "厚度": {
+      "nominal": 21.0,
+      "tolerance": 0.5
+    },
+    "孔径φ16H7": {
+      "nominal": 16.0,
+      "tolerance": 0.018,
+      "note": "H7 上偏差+0.018"
+    }
   },
   "geometric_tolerance": "未注形位公差按 GB/T 1184 K级",
   "surface_roughness": {
@@ -23,46 +36,28 @@
   "unmarked_tolerance": "未注尺寸公差按 GB/T 1804 m级",
   "items": [
     {
-      "id": "hardness",
-      "type": "hardness",
-      "label": "硬度",
-      "requirement": "调质处理，硬度 HRC20~25"
-    },
-    {
-      "id": "dimension",
-      "type": "dimension",
-      "label": "外形尺寸",
-      "requirement": "220.5×208×21mm，未注公差按 GB/T 1804 m级"
-    },
-    {
-      "id": "hole_diameter",
-      "type": "dimension",
-      "label": "φ16 H7 孔",
-      "requirement": "孔径 φ16 H7（+0.018/0）"
-    },
-    {
-      "id": "surface",
+      "id": "01",
       "type": "surface",
-      "label": "表面状态",
-      "requirement": "表面无划伤、碰伤、毛刺"
+      "label": "头部端面划伤",
+      "location": "头部端面",
+      "requirement": "无长度>2mm划伤,最多1处",
+      "tolerance": {
+        "max_count": 1,
+        "max_len_mm": 2
+      },
+      "roi": null
     },
     {
-      "id": "deburr",
-      "type": "surface",
-      "label": "去毛刺倒钝",
-      "requirement": "棱边去毛刺、倒钝"
-    },
-    {
-      "id": "roughness",
-      "type": "roughness",
-      "label": "表面粗糙度",
-      "requirement": "孔内 Ra≤3.2，其余 Ra≤6.3（需粗糙度仪检测）"
-    },
-    {
-      "id": "geometric",
+      "id": "02",
       "type": "dimension",
-      "label": "形位公差",
-      "requirement": "未注形位公差按 GB/T 1184 K级"
+      "label": "外径",
+      "location": "头部外圆",
+      "requirement": "Φ7.0 ±0.05mm",
+      "tolerance": {
+        "nominal_mm": 7.0,
+        "tol_mm": 0.05
+      },
+      "roi": null
     }
   ]
 }

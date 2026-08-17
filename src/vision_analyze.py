@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ask_vision import KEY
 
 BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
-MODEL = "qwen-vl-max"
+MODEL = "qwen-vl-plus"
 
 
 def ask(image_path, prompt, timeout=90):

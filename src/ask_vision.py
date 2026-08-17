@@ -29,7 +29,7 @@ KEY = _load_key()
 
 def ask_b64(b64, mime, prompt, timeout=90):
     """用 base64 图片数据问 Qwen-VL，返回回答文本。"""
-    payload = {"model": "qwen-vl-max", "messages": [{"role": "user", "content": [
+    payload = {"model": "qwen-vl-plus", "messages": [{"role": "user", "content": [
         {"type": "image_url", "image_url": {"url": f"data:image/{mime};base64,{b64}"}},
         {"type": "text", "text": prompt},
     ]}]}

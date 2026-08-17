@@ -6,6 +6,8 @@
 """
 import glob
 import os
+from config import patch_cv_io; patch_cv_io()
+
 
 import cv2
 import numpy as np

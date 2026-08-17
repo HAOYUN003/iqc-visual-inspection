@@ -26,6 +26,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from config import (THREAD_SIDE_DIR, THREAD_CLASSES, THREAD_IMG_SIZE,
                     THREAD_MODEL_PATH)
 from detection import spec_model
+from config import patch_cv_io; patch_cv_io()
+
 
 
 class ThreadDataset(Dataset):

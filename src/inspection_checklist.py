@@ -65,6 +65,17 @@ def find_checklist(material_no=None, drawing_no=None):
     return None
 
 
+def save_checklist(checklist):
+    """保存/覆盖清单 JSON。返回保存路径。"""
+    drawing_no = checklist.get("drawing_no")
+    if not drawing_no:
+        raise ValueError("清单必须包含 drawing_no")
+    CHECKLIST_DIR.mkdir(parents=True, exist_ok=True)
+    path = CHECKLIST_DIR / f"{drawing_no}.json"
+    path.write_text(json.dumps(checklist, ensure_ascii=False, indent=2), encoding="utf-8")
+    return path
+
+
 def split_visual_nonvisual(checklist):
     """把 items 分成 [可视觉验证项, 需仪器项]。"""
     vis, nonvis = [], []
@@ -77,6 +88,7 @@ def build_checklist_prompt(checklist, images_info=None):
     """
     构造清单逐项判定 prompt。
     images_info: 可选 str，描述待检角度（如"正面、侧面、孔位"）。
+    检验项支持 location（检验部位）字段：有则注入 prompt，引导视觉模型到指定部位查。
     """
     header = (
         "这是机加工零件（{part}，{drawing_no}）的照片，按图纸技术要求逐项校验。\n"
@@ -92,7 +104,11 @@ def build_checklist_prompt(checklist, images_info=None):
     items = checklist.get("items", [])
     lines = []
     for i, it in enumerate(items, 1):
-        lines.append(f"{i}. {it.get('label')}：{it.get('requirement')}")
+        label = it.get("label")
+        loc = it.get("location")
+        req = it.get("requirement")
+        loc_txt = f"（检验位置：{loc}）" if loc else ""
+        lines.append(f"{i}. {label}{loc_txt}：{req}")
     header += "检查项：\n" + "\n".join(lines)
 
     header += (
@@ -156,9 +172,12 @@ def parse_item_results(text, checklist):
         results.append({
             "id": iid,
             "label": it.get("label"),
+            "location": it.get("location"),
             "requirement": it.get("requirement"),
             "type": it.get("type"),
             "visual": it.get("type") in VISUAL_TYPES,
+            "tolerance": it.get("tolerance"),
+            "roi": it.get("roi"),
             "status": norm_status(row.get("status")),
             "reason": row.get("reason") or "",
         })
@@ -169,13 +188,54 @@ def parse_item_results(text, checklist):
             results.append({
                 "id": it["id"],
                 "label": it.get("label"),
+                "location": it.get("location"),
                 "requirement": it.get("requirement"),
                 "type": it.get("type"),
                 "visual": it.get("type") in VISUAL_TYPES,
+                "tolerance": it.get("tolerance"),
+                "roi": it.get("roi"),
                 "status": "UNSURE",
                 "reason": "视觉未给出该项判定",
             })
     return results
+
+
+def judge_item_quantitative(item, measured_mm=None, defect_counts=None):
+    """
+    按 tolerance 做机器量化判定，覆盖视觉模型的 UNSURE。
+    - dimension/几何类：measured_mm（实测值） vs nominal_mm ± tol_mm → OK/NG/UNSURE
+    - surface 类：defect_counts（缺陷计数 dict） vs max_count/max_len → OK/NG
+    返回 (status, reason)。无 tolerance 或数据不足时返回视觉原判。
+    """
+    tol = item.get("tolerance")
+    if not tol:
+        return None, None
+    itype = item.get("type")
+
+    # ---- 尺寸类：实测值 vs 公差 ----
+    if itype in ("dimension", "geometric") and measured_mm is not None:
+        nominal = tol.get("nominal_mm")
+        tol_mm = tol.get("tol_mm")
+        if nominal is None or tol_mm is None:
+            return None, None
+        dist = abs(measured_mm - nominal)
+        if dist <= tol_mm:
+            return "OK", f"实测 {measured_mm:.2f}mm，名义 {nominal:.2f}mm±{tol_mm:.2f}，偏差 {dist:.2f}mm（合格）"
+        return "NG", f"实测 {measured_mm:.2f}mm，名义 {nominal:.2f}mm±{tol_mm:.2f}，偏差 {dist:.2f}mm（超差）"
+
+    # ---- 表面类：缺陷计数 vs 上限 ----
+    if itype in ("surface", "deburr") and defect_counts:
+        max_count = tol.get("max_count")
+        # 尺寸超差仍无、缺计数上限时退回视觉原判
+        if max_count is None:
+            return None, None
+        total = sum(defect_counts.values())
+        if total == 0:
+            return "OK", "无可见缺陷"
+        if total <= max_count:
+            return "OK", f"缺陷 {total} 处（上限 {max_count}），在允许范围"
+        return "NG", f"缺陷 {total} 处（上限 {max_count}），超标"
+    return None, None
 
 
 def resolve_checklist_verdict(item_results):

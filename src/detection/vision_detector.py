@@ -24,6 +24,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from config import (RAW_DIR, SPEC_NOMINAL_HEAD_MM)
 from ask_vision import ask, ask_b64
 from vision_pipeline import sample_reading, infer_spec_by_reading, READING_RANGE_MM
+from config import patch_cv_io; patch_cv_io()
+
 
 # 缺陷类别（视觉判定）
 DEFECT_CLASSES = ["scratch", "crack", "rust", "pit"]
@@ -374,18 +376,20 @@ def run_vision_detection(img_bgr=None, image_path=None, expected_spec=None,
 # ================= 图纸清单逐项校验 =================
 
 def run_checklist_detection(images, drawing_no=None, checklist=None,
-                            save_image=True, material_no=None):
+                            save_image=True, material_no=None, measured=None):
     """
-    按图纸检测清单逐项视觉校验（加工件模式，多角度照片）。
+    按图纸检测清单逐项校验（加工件模式，多角度照片）。
     images: list of (img_bgr, path) 或 list of path。至少一张。
     drawing_no / checklist: 二选一，指定清单。
+    measured: dict {item_id: 实测值mm}，用于尺寸/几何项按 tolerance 机器量化判定
+        （视觉对尺寸无法验证，必须给实测值才能判定；未给则 UNSURE 需仪器检测）。
     返回 dict（对齐 run_detection 基础上加 checklist 字段）：
         image_path / spec_result=None / spec_method="vision_checklist" /
         defect_summary / ai_verdict / reasons / per_item / checklist_no / material_no。
     """
     from inspection_checklist import (load_checklist, find_checklist,
                                       build_checklist_prompt, parse_item_results,
-                                      resolve_checklist_verdict)
+                                      resolve_checklist_verdict, judge_item_quantitative)
 
     if checklist is None:
         checklist = load_checklist(drawing_no) if drawing_no else find_checklist(material_no=material_no)
@@ -433,6 +437,21 @@ def run_checklist_detection(images, drawing_no=None, checklist=None,
         verdict = "UNSURE"
     else:
         per_item = parse_item_results(text, checklist)
+
+        # ---- 量化判定覆盖视觉 UNSURE ----
+        # 1) 尺寸/几何项：用实测值（measured）按 tolerance 机器判定
+        measured = measured or {}
+        for r in per_item:
+            if r["type"] in ("dimension", "geometric") and r["status"] in ("UNSURE",):
+                val = measured.get(r["id"])
+                if val is not None:
+                    st, rs = judge_item_quantitative(r, measured_mm=val)
+                    if st:
+                        r["status"] = st
+                        r["reason"] = rs
+                        r["judged_by"] = "tolerance"
+        # 2) surface 类：聚合缺陷计数后按 max_count 判定
+        #    （视觉逐项已给 reason，这里仅在有明确缺陷计数映射时兜底）
         verdict, reasons = resolve_checklist_verdict(per_item)
 
     # defect_summary：仅汇总 surface 类缺陷（NG 项）

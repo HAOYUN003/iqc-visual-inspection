@@ -66,3 +66,41 @@ DEFECT_AREA_THRESH = 0.0    # 缺陷面积阈值（保留，可扩展）
 # ============ 相机/硬件（Phase 1 预留）============
 CAMERA_INDEX = 0            # 本地摄像头索引（电脑镜头/手机 RTSP 预留）
 CAMERA_API = "cv2"          # cv2 | basler | hikvision
+
+# ============ 中文路径兼容：全局替换 cv2.imread/imwrite ============
+# Windows 下 cv2.imread 无法读中文文件名，用 imdecode/imencode 替代。
+# 用法：在模块顶部 from config import patch_cv_io; patch_cv_io() 后，
+#       该模块的 cv2.imread/cv2.imwrite 自动兼容中文路径。
+import cv2 as _cv2
+import numpy as _np
+from pathlib import Path as _Path
+
+
+def _safe_imread(path, flags=_cv2.IMREAD_COLOR):
+    p = _Path(path)
+    try:
+        data = _np.fromfile(p, dtype=_np.uint8)
+    except Exception:
+        return None
+    if data.size == 0:
+        return None
+    return _cv2.imdecode(data, flags)
+
+
+def _safe_imwrite(path, img, params=None):
+    p = _Path(path)
+    ext = p.suffix or ".png"
+    ok, buf = _cv2.imencode(ext, img, params if params is not None else [])
+    if not ok:
+        return False
+    buf.tofile(p)
+    return True
+
+
+def patch_cv_io():
+    """把 cv2.imread / cv2.imwrite 换成中文路径安全版本（幂等）。"""
+    if getattr(_cv2, "imread", None) is not _safe_imread:
+        _cv2.imread = _safe_imread
+    if getattr(_cv2, "imwrite", None) is not _safe_imwrite:
+        _cv2.imwrite = _safe_imwrite
+    return _cv2

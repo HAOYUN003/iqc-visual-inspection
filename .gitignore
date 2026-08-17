@@ -12,6 +12,12 @@ data/raw/
 data/db/
 data/debug_*.png
 
+# 训练数据导出（复核回灌产物，可通过 export_training.py 重建）
+data/training/
+
+# 清理时归档的旧文件（可逆备份）
+_backup/
+
 # 模型权重（体积大，可重新训练）
 models/*.pt
 models/*.pth
@@ -27,6 +33,7 @@ __pycache__/
 reports/
 runs/
 .DS_Store
+streamlit.log
 
 # 密钥配置（含 DashScope/Qwen-VL API key，不入库）
 .mcp.json
