@@ -151,7 +151,9 @@ def inspector_page():
         # ---- ① 来料信息 ----
         with sec_card(f"{step_badge(1)} 来料信息", "登记批次与物料，AI 将按料号自动匹配检验配置"):
             with st.form("batch_form"):
-                batch_id = st.text_input("批次号 *", placeholder="如 IQC20260807-01")
+                st.caption("📟 支持扫码枪：光标停在批次号/料号框，直接扫码即自动填入")
+                batch_id = st.text_input("批次号 *", placeholder="如 IQC20260807-01",
+                                         help="可用扫码枪扫批次条码，自动填入")
                 material_no = st.text_input("料号 *", placeholder="如 M4-HEX-SCREW")
                 material_name = st.text_input("名称", placeholder="内六角螺钉")
                 spec_expected = st.selectbox("期望规格（图纸/料单）", ["", *SPEC_CLASSES],
@@ -499,8 +501,8 @@ def _fmt_defect(summary):
 
 def supervisor_page():
     st.header("主管端：质量统计与追溯")
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-        ["质量总览", "批次/供应商报表", "追溯查询", "物料管理", "检验标准", "数据积累"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
+        ["质量总览", "批次/供应商报表", "追溯查询", "物料管理", "检验标准", "数据积累", "上机反查"])
 
     # ---- 总览 ----
     with tab1:
@@ -762,9 +764,17 @@ def supervisor_page():
                     if it_type in ("dimension", "geometric"):
                         cN, cT = st.columns(2)
                         nom = cN.number_input("名义值 mm", min_value=0.0, value=0.0, step=0.1)
-                        tolm = cT.number_input("公差 ±mm", min_value=0.0, value=0.0, step=0.01)
-                        if nom > 0 or tolm > 0:
-                            it_tol = {"nominal_mm": float(nom), "tol_mm": float(tolm)}
+                        tolm = cT.number_input("公差 ±mm（0=用国标未注公差）",
+                                               min_value=0.0, value=0.0, step=0.01,
+                                               help="填0则按 GB/T 1804-m 未注公差自动判定")
+                        if nom > 0:
+                            it_tol = {"nominal_mm": float(nom)}
+                            if tolm > 0:
+                                it_tol["tol_mm"] = float(tolm)
+                        if nom > 0 and tolm == 0:
+                            from src.gb_tolerance import linear_tolerance
+                            st.caption(f"ℹ️ 将按国标未注公差判定：±{linear_tolerance(nom):g}mm "
+                                       f"(GB/T 1804-m)")
                     elif it_type in ("surface", "deburr"):
                         mx = st.number_input("缺陷数量上限", min_value=0, value=0, step=1)
                         if mx > 0:
@@ -802,7 +812,11 @@ def supervisor_page():
                     tol_txt = ""
                     if tol:
                         if "nominal_mm" in tol:
-                            tol_txt = f" · 阈 {tol['nominal_mm']}±{tol['tol_mm']}mm"
+                            if "tol_mm" in tol and tol["tol_mm"]:
+                                tol_txt = f" · 阈 {tol['nominal_mm']}±{tol['tol_mm']}mm"
+                            else:
+                                from src.gb_tolerance import linear_tolerance
+                                tol_txt = f" · 阈 {tol['nominal_mm']}±{linear_tolerance(tol['nominal_mm']):g}mm(国标m级)"
                         elif "max_count" in tol:
                             tol_txt = f" · 阈 ≤{tol['max_count']}处"
                     st.markdown(f"- **{it['label']}**{loc}{vis}{tol_txt}：{it.get('requirement')}")
@@ -846,6 +860,47 @@ def supervisor_page():
             stats = et.export_training_data()
             st.success(f"已导出：规格 {sum(stats['spec'].values())} 张，"
                        f"缺陷 OK {stats['defect_ok']} / NG {stats['defect_ng']}")
+
+    # ---- 上机不良反查（抽检漏检定位）----
+    with tab7:
+        st.subheader("上机不良反查")
+        st.caption("来料抽检可能漏掉袋中不良品，上机才发现。输入上机出问题的批次号，"
+                   "反查该批次全部抽检记录与照片，快速定位是否漏检。")
+        q_batch = st.text_input("输入上机出问题的批次号", placeholder="如 IQC20260807-01")
+        if q_batch and st.button("反查", type="primary"):
+            summary = rp.batch_traceback_summary(q_batch)
+            if summary["检验件数"] == 0:
+                st.warning(f"批次 {q_batch} 无检验记录，可能未登记或未抽检")
+            else:
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("检验件数", summary["检验件数"])
+                c2.metric("OK数", summary["OK数"])
+                c3.metric("NG数", summary["NG数"])
+                c4.metric("留照片", summary["留照片"])
+                st.caption(f"已复核 {summary['已复核']} 条。若上机发现不良但抽检全 OK，"
+                           f"说明漏检在抽检覆盖之外，建议提高该物料抽检比例。")
+                df = rp.batch_traceback(q_batch)
+                if not df.empty:
+                    st.dataframe(df, use_container_width=True)
+                    # 照片缩略
+                    imgs = [r for r in df["照片"] if r]
+                    if imgs:
+                        st.markdown("**抽检照片**（点击放大，可人工复核原图）")
+                        from src.config import patch_cv_io; patch_cv_io()
+                        import cv2 as _cv2
+                        cols = st.columns(min(4, len(imgs)))
+                        for i, ip in enumerate(imgs[:8]):
+                            with cols[i % 4]:
+                                try:
+                                    im = _cv2.imread(ip)
+                                    if im is not None:
+                                        st.image(_cv2.cvtColor(im, _cv2.COLOR_BGR2RGB),
+                                                 caption=ip.split("/")[-1][:20])
+                                except Exception:
+                                    pass
+                    if st.button("导出反查记录"):
+                        path = rp.export_report(df, fmt="csv")
+                        st.success(f"已导出: {path}")
 
 
 # ================= 主入口 =================

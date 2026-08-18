@@ -19,6 +19,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from config import (SPEC_NOMINAL_HEAD_MM, SPEC_HEAD_TOLERANCE_MM,
                     CALIB_PX_PER_MM)
+from gb_tolerance import linear_tolerance
 from config import patch_cv_io; patch_cv_io()
 
 
@@ -228,20 +229,22 @@ def _measure_hex(img_bgr, gray, outer, holes, cx, cy, px_per_mm, expected_spec=N
     return result
 
 
-def _judge_dimension(expected_spec, part_type, measured_mm):
-    """对照名义值±公差判定 OK/NG。无期望规格时只返回测量值。"""
+def _judge_dimension(expected_spec, part_type, measured_mm, tolerance_mm=None):
+    """对照名义值±公差判定 OK/NG。无期望规格时只返回测量值。
+    tolerance_mm: 显式公差；未提供时按国标未注公差(GB/T 1804-m)查表。"""
     if expected_spec and expected_spec in SPEC_NOMINAL_HEAD_MM:
         # 名义外径：washer 外径 = 头径×1.25，screw/nut 外径 = 头径
         nominal = SPEC_NOMINAL_HEAD_MM[expected_spec] * (1.25 if part_type == "washer" else 1)
-        tol = SPEC_HEAD_TOLERANCE_MM
+        tol = tolerance_mm if tolerance_mm is not None else linear_tolerance(nominal, "m")
+        tol_src = "显式公差" if tolerance_mm is not None else "GB/T 1804-m未注"
         if abs(measured_mm - nominal) <= tol:
             status = "OK"
-            reason = f"外径 {measured_mm:.3f}mm 在 {nominal}±{tol} 内"
+            reason = f"外径 {measured_mm:.3f}mm 在 {nominal}±{tol}({tol_src}) 内"
         else:
             status = "NG"
-            reason = (f"尺寸超差: 实测 {measured_mm:.3f}mm, 标准 {nominal}±{tol}mm")
+            reason = f"尺寸超差: 实测 {measured_mm:.3f}mm, 标准 {nominal}±{tol}mm({tol_src})"
         return {"status": status, "reason": reason,
-                "nominal_mm": nominal, "tolerance_mm": tol}
+                "nominal_mm": nominal, "tolerance_mm": tol, "tolerance_src": tol_src}
     return {"status": "N/A", "reason": "未提供期望规格，仅测量",
             "nominal_mm": None, "tolerance_mm": None}
 

@@ -16,7 +16,7 @@ from config import DEFECT_CLASSES
 
 
 def batch_report(filters=None):
-    """按批次维度汇总：批次数、检验件数、OK/NG、一次合格率"""
+    """按批次维度汇总：批次数、检验件数、OK/NG、一次合格率、抽检覆盖率"""
     batches = db.get_batches(filters)
     rows = []
     for b in batches:
@@ -26,15 +26,18 @@ def batch_report(filters=None):
         ng = total - ok
         reviewed = [r for r in records if r.get("review_verdict")]
         pass_after_review = sum(1 for r in reviewed if r["review_verdict"] == "PASS")
+        qty = b["quantity"] or 0
+        cover = (total / qty) if qty else None
         rows.append({
             "批次号": b["batch_id"],
             "料号": b["material_no"],
             "名称": b["material_name"],
             "规格": b["spec"],
             "供应商": b["supplier"],
-            "数量": b["quantity"],
+            "数量": qty,
             "到货日期": b["arrival_date"],
             "检验件数": total,
+            "抽检覆盖率": round(cover, 3) if cover is not None else None,
             "OK数": ok,
             "NG数": ng,
             "AI合格率": round(ok / total, 4) if total else None,
@@ -205,6 +208,47 @@ def defect_breakdown(limit=500):
     df = pd.DataFrame({"缺陷类型": list(counter.keys()),
                        "出现次数": list(counter.values())})
     return df.sort_values("出现次数", ascending=False).reset_index(drop=True)
+
+
+def batch_traceback(batch_id):
+    """上机不良反查：输入批次号，拉出该批次全部检验记录明细。
+    用于"上机发现不良 → 反查该批次抽检记录"，快速定位是否漏检。"""
+    records = db.get_records({"batch_id": batch_id}, limit=500)
+    rows = []
+    for r in records:
+        r = db.parse_defect_result(r)
+        img = r.get("image_path") or ""
+        rows.append({
+            "记录ID": r["record_id"],
+            "检验时间": r["inspected_at"],
+            "检验员": r["inspector"],
+            "AI判定": r["ai_verdict"],
+            "人工复核": r["review_verdict"],
+            "规格": r["spec_result"],
+            "缺陷": _fmt_defect(r.get("defect_result")),
+            "照片": img,
+        })
+    df = pd.DataFrame(rows)
+    return df
+
+
+def batch_traceback_summary(batch_id):
+    """反查摘要：该批次检验件数、OK/NG 分布、是否有复核、照片是否留存。
+    帮助判断"抽检记录是否足以定位问题"。"""
+    records = db.get_records({"batch_id": batch_id}, limit=500)
+    n = len(records)
+    ok = sum(1 for r in records if r["ai_verdict"] == "OK")
+    ng = n - ok
+    reviewed = sum(1 for r in records if r.get("review_verdict"))
+    with_photo = sum(1 for r in records if r.get("image_path"))
+    return {
+        "batch_id": batch_id,
+        "检验件数": n,
+        "OK数": ok,
+        "NG数": ng,
+        "已复核": reviewed,
+        "留照片": with_photo,
+    }
 
 
 if __name__ == "__main__":

@@ -40,3 +40,12 @@ streamlit.log
 
 # 现场真实照片（含隐私/现场数据，不入库）
 data/real/
+
+# Word 文档（衍生产物，README 为权威说明）
+*.docx
+*.doc
+~$*
+
+# 文档生成脚本产物
+_doc_*.png
+_doc_*.txt

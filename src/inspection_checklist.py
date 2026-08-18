@@ -216,12 +216,18 @@ def judge_item_quantitative(item, measured_mm=None, defect_counts=None):
     if itype in ("dimension", "geometric") and measured_mm is not None:
         nominal = tol.get("nominal_mm")
         tol_mm = tol.get("tol_mm")
-        if nominal is None or tol_mm is None:
+        # 未给显式公差时，按国标未注公差(GB/T 1804-m)查表
+        tol_src = "显式"
+        if nominal is None and tol_mm is None:
             return None, None
+        if tol_mm is None:
+            from gb_tolerance import linear_tolerance
+            tol_mm = linear_tolerance(nominal, "m")
+            tol_src = "GB/T 1804-m"
         dist = abs(measured_mm - nominal)
         if dist <= tol_mm:
-            return "OK", f"实测 {measured_mm:.2f}mm，名义 {nominal:.2f}mm±{tol_mm:.2f}，偏差 {dist:.2f}mm（合格）"
-        return "NG", f"实测 {measured_mm:.2f}mm，名义 {nominal:.2f}mm±{tol_mm:.2f}，偏差 {dist:.2f}mm（超差）"
+            return "OK", f"实测 {measured_mm:.2f}mm，名义 {nominal:.2f}mm±{tol_mm:.2f}({tol_src})，偏差 {dist:.2f}mm（合格）"
+        return "NG", f"实测 {measured_mm:.2f}mm，名义 {nominal:.2f}mm±{tol_mm:.2f}({tol_src})，偏差 {dist:.2f}mm（超差）"
 
     # ---- 表面类：缺陷计数 vs 上限 ----
     if itype in ("surface", "deburr") and defect_counts:
