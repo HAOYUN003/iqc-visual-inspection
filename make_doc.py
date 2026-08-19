@@ -274,6 +274,31 @@ bullet("仓库联动方案：明确联动范围（库存核对 / 放行通知 / 
 bullet("检测单格式：对齐公司现有单据模板与栏位")
 bullet("数据安全：图纸、检验记录等涉密资料的访问控制与存储安全")
 
+# ============ 八、GitHub 仓库与登录指引 ============
+h1("八、代码托管与 GitHub 登录指引")
+
+h2("8.1 GitHub 仓库")
+para("本项目代码开源托管在 GitHub，包含全部源码、README 使用说明与配置，便于版本管理与协作：")
+bullet("仓库地址：https://github.com/HAOYUN003/iqc-visual-inspection")
+bullet("内容：前端界面（app/）、检测引擎（src/）、配置、README")
+bullet("安全说明：API 密钥（.mcp.json）、真实照片、模型权重、数据库均通过 .gitignore 排除，"
+       "不随仓库公开。")
+
+h2("8.2 首次登录 GitHub")
+para("访问并克隆代码需先登录 GitHub 账号，步骤如下：", bold=False)
+numbered("打开浏览器，访问 https://github.com ，点击右上角 Sign in 登录（无账号则点 Sign up 注册）")
+numbered("进入仓库页面 https://github.com/HAOYUN003/iqc-visual-inspection ，"
+         "点击绿色 Code 按钮，选择 HTTPS 地址复制")
+numbered("在本地终端执行 git clone https://github.com/HAOYUN003/iqc-visual-inspection.git "
+         "即可拉取代码到本地")
+
+h2("8.3 提交代码 / 更新仓库（开发者）")
+numbered("本地安装 GitHub CLI（gh）：Windows 可在 PowerShell 运行 winget install GitHub.cli")
+numbered("登录：终端执行 gh auth login，按提示选择 GitHub.com → HTTPS → 网页授权")
+numbered("提交本地改动：git add . → git commit -m \"说明\" → git push origin main")
+para("提示：系统已配置 git 代理（127.0.0.1:7890），联网需开启代理，否则推送可能超时。",
+     italic=True)
+
 # ============ 图片（架构图，从原文档提取）============
 import os
 import zipfile
