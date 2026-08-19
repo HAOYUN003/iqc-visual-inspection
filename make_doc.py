@@ -274,25 +274,42 @@ bullet("仓库联动方案：明确联动范围（库存核对 / 放行通知 / 
 bullet("检测单格式：对齐公司现有单据模板与栏位")
 bullet("数据安全：图纸、检验记录等涉密资料的访问控制与存储安全")
 
-# ============ 八、GitHub 仓库与登录指引 ============
-h1("八、代码托管与 GitHub 登录指引")
+# ============ 八、GitHub 开源项目 ============
+h1("八、GitHub 开源项目")
+para("本项目已开源托管在 GitHub，作为作者（HAOYUN003）在智能制造 / 机器视觉方向的代表作品，"
+     "展示从光学成像、深度学习到质量工程的完整技术实践。", bold=False)
 
-h2("8.1 GitHub 仓库")
-para("本项目代码开源托管在 GitHub，包含全部源码、README 使用说明与配置，便于版本管理与协作：")
+h2("8.1 项目概览")
 bullet("仓库地址：https://github.com/HAOYUN003/iqc-visual-inspection")
-bullet("内容：前端界面（app/）、检测引擎（src/）、配置、README")
-bullet("安全说明：API 密钥（.mcp.json）、真实照片、模型权重、数据库均通过 .gitignore 排除，"
-       "不随仓库公开。")
+bullet("项目定位：面向半导体设备厂 IQC 来料检验的 AI 视觉检测 + 质量追溯系统")
+bullet("技术栈：Python · Streamlit · PyTorch · YOLOv8 · Qwen-VL · SQLite · OpenCV")
+bullet("核心亮点：混合检测引擎（本地免费 + 视觉大模型可选）、国标公差知识库、"
+       "检验标准结构化、质量追溯闭环、复核数据回灌")
+bullet("配套说明：README 提供快速开始（环境/数据/训练/启动）；docs/光学方案设计 提供 Phase 1 光学选型")
 
-h2("8.2 首次登录 GitHub")
-para("访问并克隆代码需先登录 GitHub 账号，步骤如下：", bold=False)
-numbered("打开浏览器，访问 https://github.com ，点击右上角 Sign in 登录（无账号则点 Sign up 注册）")
-numbered("进入仓库页面 https://github.com/HAOYUN003/iqc-visual-inspection ，"
-         "点击绿色 Code 按钮，选择 HTTPS 地址复制")
-numbered("在本地终端执行 git clone https://github.com/HAOYUN003/iqc-visual-inspection.git "
-         "即可拉取代码到本地")
+h2("8.2 仓库结构")
+numbered("app/：Streamlit 双端界面（检验员端 / 主管端）")
+numbered("src/：检测引擎（engine/pipeline/spec/defect/thread/dimension）、质量数据库、"
+         "国标公差库、检验标准、报表分析、数据导出")
+numbered("docs/：光学方案设计（镜头选型、光源设计、标定方法）")
+numbered("make_doc.py：系统说明文档生成脚本（本文档即由其生成）")
+numbered("README.md：快速开始与技术亮点")
 
-h2("8.3 提交代码 / 更新仓库（开发者）")
+h2("8.3 安全与隐私")
+para("仓库为公开项目，以下内容已通过 .gitignore 排除，不随仓库公开：", bold=False)
+bullet("API 密钥：.mcp.json（含阿里云 DashScope / Qwen-VL 密钥）")
+bullet("现场真实照片：data/real、data/raw（含工件与现场信息）")
+bullet("模型权重：models/*.pt、*.pth（体积大，可按 README 重新训练）")
+bullet("质量数据库：data/db（检验记录与追溯数据）")
+bullet("训练数据集：data/training 等生成产物")
+
+h2("8.4 查看与使用")
+numbered("打开浏览器访问 https://github.com/HAOYUN003/iqc-visual-inspection 即可查看代码与 README")
+numbered("如需克隆到本地：点击 Code → 复制 HTTPS 地址 → 终端执行 "
+         "git clone https://github.com/HAOYUN003/iqc-visual-inspection.git")
+numbered("按 README 快速开始，配置环境、准备数据、训练本地模型、启动网页")
+
+h2("8.5 协作与版本管理（开发者）")
 numbered("本地安装 GitHub CLI（gh）：Windows 可在 PowerShell 运行 winget install GitHub.cli")
 numbered("登录：终端执行 gh auth login，按提示选择 GitHub.com → HTTPS → 网页授权")
 numbered("提交本地改动：git add . → git commit -m \"说明\" → git push origin main")
