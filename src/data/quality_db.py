@@ -98,6 +98,18 @@ def init_db():
             note         TEXT,                       -- 备注
             created_at   TEXT DEFAULT (datetime('now','localtime'))
         );
+
+        CREATE TABLE IF NOT EXISTS drawings (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            drawing_no   TEXT NOT NULL,               -- 图号
+            material_no  TEXT,                        -- 关联料号（可选）
+            part_name    TEXT,                        -- 零件名称
+            file_path    TEXT NOT NULL,               -- 图纸文件路径（PDF/图片）
+            file_type    TEXT,                        -- pdf/png/jpg 等
+            uploader     TEXT,                        -- 上传人
+            uploaded_at  TEXT DEFAULT (datetime('now','localtime')),
+            note         TEXT
+        );
         """)
         _migrate_schema(conn)
 
@@ -166,6 +178,53 @@ def get_materials(filters=None, limit=500):
 def delete_material(material_no):
     with get_conn() as conn:
         conn.execute("DELETE FROM materials WHERE material_no=?", (material_no,))
+
+
+# ================= 图纸操作 =================
+
+def add_drawing(drawing_no, file_path, material_no=None, part_name=None,
+                file_type=None, uploader=None, note=None):
+    """新增一条图纸记录。"""
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO drawings (drawing_no, material_no, part_name, file_path, "
+            "file_type, uploader, note) VALUES (?,?,?,?,?,?,?)",
+            (drawing_no, material_no, part_name, file_path, file_type, uploader, note))
+        return cur.lastrowid
+
+
+def get_drawings(filters=None, limit=200):
+    """查询图纸，支持按图号/料号筛选。"""
+    sql = "SELECT * FROM drawings WHERE 1=1"
+    args = []
+    if filters:
+        if filters.get("drawing_no"):
+            sql += " AND drawing_no LIKE ?"; args.append(f"%{filters['drawing_no']}%")
+        if filters.get("material_no"):
+            sql += " AND material_no = ?"; args.append(filters["material_no"])
+    sql += " ORDER BY uploaded_at DESC LIMIT ?"
+    args.append(limit)
+    with get_conn() as conn:
+        rows = conn.execute(sql, args).fetchall()
+        return [dict(r) for r in rows]
+
+
+def find_drawing(material_no=None, drawing_no=None):
+    """按料号或图号找图纸。料号命中优先。"""
+    if material_no:
+        d = get_drawings({"material_no": material_no}, limit=5)
+        if d:
+            return d[0]
+    if drawing_no:
+        d = get_drawings({"drawing_no": drawing_no}, limit=5)
+        if d:
+            return d[0]
+    return None
+
+
+def delete_drawing(drawing_id):
+    with get_conn() as conn:
+        conn.execute("DELETE FROM drawings WHERE id=?", (drawing_id,))
 
 
 def material_from_batch(batch_id):

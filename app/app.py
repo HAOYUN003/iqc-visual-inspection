@@ -186,7 +186,37 @@ def inspector_page():
             else:
                 st.warning(f"批次 {batch_id} 已登记，但料号 {material_no} 不在 AI 检测白名单中，"
                            "将跳过 AI 判定（主管端「物料管理」可添加）")
+            # 自动匹配该料号的图纸
+            drawing = db.find_drawing(material_no=material_no)
+            if drawing:
+                st.session_state.material_drawing = drawing
+                st.success(f"批次 {batch_id} 已登记，已关联图纸 {drawing['drawing_no']}")
+            else:
+                st.session_state.material_drawing = None
+                st.caption("未找到该料号的图纸，如需可在主管端「图纸管理」上传")
             st.success(f"批次 {batch_id} 已登记")
+
+        # 图纸预览（登记后自动显示）
+        if st.session_state.get("material_drawing"):
+            dwg = st.session_state.material_drawing
+            with st.expander(f"📐 图纸 {dwg['drawing_no']}", expanded=False):
+                fp = dwg.get("file_path")
+                if fp and Path(fp).exists():
+                    ext = (dwg.get("file_type") or "").lower()
+                    if ext in ("png", "jpg", "jpeg", "bmp"):
+                        st.image(str(fp), width=400)
+                    else:
+                        st.caption(f"PDF 图纸：{Path(fp).name}")
+                        try:
+                            import base64 as _b64
+                            data = Path(fp).read_bytes()
+                            b64 = _b64.b64encode(data).decode()
+                            st.markdown(
+                                f'<a href="data:application/pdf;base64,{b64}" '
+                                f'download="{Path(fp).name}">⬇️ 下载图纸</a>',
+                                unsafe_allow_html=True)
+                        except Exception:
+                            pass
 
         # ---- ② 图像采集 ----
         with sec_card(f"{step_badge(2)} 图像采集", "选择检测模式，上传或拍摄零件照片"):
@@ -501,8 +531,8 @@ def _fmt_defect(summary):
 
 def supervisor_page():
     st.header("主管端：质量统计与追溯")
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
-        ["质量总览", "批次/供应商报表", "追溯查询", "物料管理", "检验标准", "数据积累", "上机反查"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(
+        ["质量总览", "批次/供应商报表", "追溯查询", "物料管理", "检验标准", "数据积累", "上机反查", "图纸管理"])
 
     # ---- 总览 ----
     with tab1:
@@ -902,6 +932,67 @@ def supervisor_page():
                         path = rp.export_report(df, fmt="csv")
                         st.success(f"已导出: {path}")
 
+    # ---- 图纸管理（上传/查看/关联）----
+    with tab8:
+        st.subheader("图纸管理")
+        st.caption("上传图纸文件（PDF/图片），按图号/料号关联，检验员端登记料号后可在线查阅。")
+        cA, cB = st.columns([1, 1.2])
+
+        # 左：上传图纸
+        with cA:
+            with st.form("drawing_form"):
+                d_no = st.text_input("图号 *", placeholder="如 R05-03130412-E01")
+                d_mat = st.text_input("关联料号（可选）", placeholder="如 M4-HEX-SCREW",
+                                      help="填了料号后，检验员端登记该料号自动带出图纸")
+                d_name = st.text_input("零件名称", placeholder="如 挡料")
+                d_uploader = st.text_input("上传人")
+                d_note = st.text_input("备注")
+                d_file = st.file_uploader("选择图纸文件", type=["pdf", "png", "jpg", "jpeg", "bmp"])
+                d_saved = st.form_submit_button("上传图纸")
+            if d_saved and d_no and d_file:
+                from src.config import DRAWINGS_DIR
+                DRAWINGS_DIR.mkdir(parents=True, exist_ok=True)
+                # 保存文件（中文路径兼容）
+                fname = f"{d_no}_{d_file.name}"
+                fpath = DRAWINGS_DIR / fname
+                fpath.write_bytes(d_file.getbuffer())
+                ext = d_file.name.split(".")[-1].lower()
+                db.add_drawing(d_no, str(fpath), material_no=d_mat or None,
+                               part_name=d_name or None, file_type=ext,
+                               uploader=d_uploader or None, note=d_note or None)
+                st.success(f"图纸 {d_no} 已上传")
+                st.rerun()
+
+        # 右：图纸列表 + 删除
+        with cB:
+            drawings = db.get_drawings()
+            if not drawings:
+                st.info("暂无图纸，左边上传")
+            else:
+                for d in drawings:
+                    ext = (d.get("file_type") or "").lower()
+                    is_img = ext in ("png", "jpg", "jpeg", "bmp")
+                    st.markdown(f"**{d['drawing_no']}**"
+                                + (f" · {d['part_name']}" if d.get("part_name") else "")
+                                + (f" · 料号 {d['material_no']}" if d.get("material_no") else "")
+                                + (f" · {d['uploader']} 上传" if d.get("uploader") else ""))
+                    if d.get("file_path") and Path(d["file_path"]).exists():
+                        if is_img:
+                            st.image(str(d["file_path"]), width=300)
+                        else:
+                            st.caption(f"PDF 图纸：{d['file_path'].split(chr(92))[-1]}")
+                            # 提供下载/打开
+                            try:
+                                import base64 as _b64
+                                data = Path(d["file_path"]).read_bytes()
+                                b64 = _b64.b64encode(data).decode()
+                                href = f'<a href="data:application/pdf;base64,{b64}" download="{(d["file_path"]).split(chr(92))[-1]}">⬇️ 下载图纸</a>'
+                                st.markdown(href, unsafe_allow_html=True)
+                            except Exception:
+                                pass
+                    if st.button("删除", key=f"del_draw_{d['id']}"):
+                        db.delete_drawing(d["id"])
+                        st.rerun()
 
 # ================= 主入口 =================
 

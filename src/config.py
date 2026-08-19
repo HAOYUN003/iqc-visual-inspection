@@ -12,6 +12,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 RAW_DIR = DATA_DIR / "raw"              # 原始来料照片
 STD_PARTS_DIR = DATA_DIR / "standard_parts"  # 标准件规格模拟图
+DRAWINGS_DIR = DATA_DIR / "drawings"    # 图纸文件（PDF/图片）
 DB_DIR = DATA_DIR / "db"
 DB_PATH = DB_DIR / "iqc_records.db"
 
